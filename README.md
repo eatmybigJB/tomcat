@@ -1,12 +1,11 @@
 ```python
-# svocid valid and not equal old svocid
-current_matching_id = update_info['after'].get('currentMatchingId')
-new_matching_id = update_info['after'].get('new_matchingId_id')
-old_svoc_id = cognito_user_info.get('custom:svoc_id')
+import re
 
-if current_matching_id and current_matching_id != old_svoc_id:
-    update_item['custom:svoc_id'] = current_matching_id
-elif new_matching_id and new_matching_id != old_svoc_id:
-    update_item['custom:svoc_id'] = new_matching_id
+def is_valid_email(email):
+    if not isinstance(email, str):
+        return False
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(email_regex, email, re.IGNORECASE) is not None
 
-return update_item
+# 测试
+print(is_valid_email("insn.uat2@gmail.com"))  # True
