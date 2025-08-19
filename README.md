@@ -10,15 +10,24 @@ file_b = os.path.abspath(os.path.join(script_dir, "new_list.csv"))
 a = pd.read_csv(file_a)
 b = pd.read_csv(file_b)
 
-# 统一列名为小写，避免大小写不一致的问题
+# 统一列名为小写
 a.columns = a.columns.str.lower()
 b.columns = b.columns.str.lower()
 
-# 合并，根据username匹配
-result = b.merge(a[['username', 'custom:nric']], on="username", how="left")
+# 构造小写的匹配键，忽略大小写和前后空格
+a["_key"] = a["preferred_username"].astype(str).str.strip().str.lower()
+b["_key"] = b["username"].astype(str).str.strip().str.lower()
+
+# 合并（用小写键匹配）
+result = b.merge(a[["_key", "custom:nric"]], on="_key", how="left")
+
+# 输出结果只保留原始username和nric
+result = result[["username", "custom:nric"]].rename(columns={"custom:nric": "nric"})
+
+file_result = os.path.abspath(os.path.join(script_dir, "result.csv"))
 
 # 保存结果
-result.to_csv("result.csv", index=False)
+result.to_csv(file_result, index=False)
 
 print("已生成 result.csv，内容如下：")
 print(result.head())
