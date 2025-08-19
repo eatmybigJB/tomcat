@@ -1,21 +1,15 @@
 ```python
-def is_valid_email(email: str) -> bool:
-    """
-    验证邮箱格式是否合法
-    规则参考 RFC 5322 常用子集
-    """
-    if not isinstance(email, str):
-        return False
-    
-    # 允许的本地部分字符：字母、数字、点、下划线、加号、减号、百分号
-    # 点不能出现在开头/结尾，也不能连续多个点
-    email_regex = (
-        r"^(?![.])"                      # 不能以点开头
-        r"[A-Za-z0-9._%+-]+"             # 本地部分
-        r"(?<![.])"                      # 不能以点结尾
-        r"@"                             # @ 符号
-        r"(?:[A-Za-z0-9-]+\.)+"          # 域名的每一部分
-        r"[A-Za-z]{2,}$"                 # 顶级域名至少2个字母
-    )
-    
-    return re.match(email_regex, email) is not None
+import pandas as pd
+
+# 读取两个csv
+a = pd.read_csv("a.csv")
+b = pd.read_csv("b.csv")
+
+# 合并，根据username匹配
+result = b.merge(a[['username', 'nric']], on="username", how="left")
+
+# 保存结果
+result.to_csv("result.csv", index=False)
+
+print("已生成 result.csv，内容如下：")
+print(result.head())
