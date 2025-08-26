@@ -1,13 +1,12 @@
 ```python
-configs = {
-    "userpool": tomllib.load(open(userpool_config_path, "rb")),
-    "smb": tomllib.load(open(smb_config_path, "rb")),
-}
+from datetime import datetime
 
-user_pool_id  = configs["userpool"]["Cognito"]["user_pool_id"]
-server        = configs["smb"]["server"]["host"]
-share         = configs["smb"]["server"]["share"]
-username      = configs["smb"]["auth"]["username"]
-password      = configs["smb"]["auth"]["password"]
-remote_folder = configs["smb"]["file"]["remote_folder"]
-remote_path   = f"{remote_folder}/test.txt"
+def generate_filename(prefix: str = "Cognito") -> str:
+    # 格式：日+三位英文月份缩写+四位年份
+    date_str = datetime.now().strftime("%d%b%Y")  # 25Aug2025
+    return f"{prefix}_{date_str}"
+
+# 示例
+print(generate_filename())          # Cognito_26Aug2025
+print(generate_filename("Users"))   # Users_26Aug2025
+
