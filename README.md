@@ -1,12 +1,13 @@
 ```python
-def get_tmp_path(filename: str) -> str:
-    # Lambda 环境下固定用 /tmp
-    if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
-        tmpdir = "/tmp"
-    else:
-        # 本地环境用系统临时目录（Windows 会是 C:\Users\<you>\AppData\Local\Temp）
-        tmpdir = tempfile.gettempdir()
+configs = {
+    "userpool": tomllib.load(open(userpool_config_path, "rb")),
+    "smb": tomllib.load(open(smb_config_path, "rb")),
+}
 
-    p = Path(tmpdir) / filename
-    p.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
-    return str(p)
+user_pool_id  = configs["userpool"]["Cognito"]["user_pool_id"]
+server        = configs["smb"]["server"]["host"]
+share         = configs["smb"]["server"]["share"]
+username      = configs["smb"]["auth"]["username"]
+password      = configs["smb"]["auth"]["password"]
+remote_folder = configs["smb"]["file"]["remote_folder"]
+remote_path   = f"{remote_folder}/test.txt"
