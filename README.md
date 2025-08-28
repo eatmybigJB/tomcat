@@ -1,24 +1,54 @@
 ```python
-import base64
+def upload(self, local_file: str, chunk_size: int = 1024 * 1024):
+    """
+    上传本地文件到 remote_path（分块写，默认 1MiB，避免超过协商的最大写入大小）
+    """
+    file_obj = None
+    try:
+        # 打开远端文件（覆盖或新建）
+        file_obj = Open(self.tree, self.remote_path)
+        file_obj.create(
+            desired_access=FilePipePrinterAccessMask.GENERIC_WRITE,
+            share_access=ShareAccess.FILE_SHARE_READ,
+            create_disposition=CreateDisposition.FILE_OVERWRITE_IF,
+            create_options=CreateOptions.FILE_NON_DIRECTORY_FILE,
+            impersonation_level=ImpersonationLevel.Impersonation,
+            file_attributes=FileAttributes.FILE_ATTRIBUTE_NORMAL,
+        )
 
-def multi_base64_encode(data: str, n: int) -> str:
-    """对字符串进行 n 次 base64 编码，返回字符串"""
-    encoded = data.encode("utf-8")
-    for _ in range(n):
-        encoded = base64.b64encode(encoded)
-    return encoded.decode("utf-8")
+        # 本地分块读取并写入远端
+        offset = 0
+        with open(local_file, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                file_obj.write(chunk, offset)
+                offset += len(chunk)
 
-def multi_base64_decode(data: str, n: int) -> str:
-    """对字符串进行 n 次 base64 解码，返回字符串"""
-    decoded = data.encode("utf-8")
-    for _ in range(n):
-        decoded = base64.b64decode(decoded)
-    return decoded.decode("utf-8")
+        print(f"✅ 文件 {local_file} 分块上传成功 -> {self.remote_path}")
 
-# 示例
-text = "Hello, Pig!"
-encoded_twice = multi_base64_encode(text, 2)
-print("两次编码:", encoded_twice)
+    finally:
+        # 先关远端文件句柄；忽略重复关闭等异常
+        if file_obj is not None:
+            try:
+                file_obj.close()
+            except Exception:
+                pass
 
-decoded_twice = multi_base64_decode(encoded_twice, 2)
-print("两次解码:", decoded_twice)
+
+def close(self):
+    """
+    关闭连接（按 文件->树->会话->连接 的顺序；容错处理）
+    """
+    # 文件已在 upload() 里关闭，这里只断开通道
+    for obj, method in (
+        (getattr(self, "tree", None), "disconnect"),
+        (getattr(self, "session", None), "disconnect"),
+        (getattr(self, "conn", None), "disconnect"),
+    ):
+        if obj is not None:
+            try:
+                getattr(obj, method)()
+            except Exception:
+                pass
