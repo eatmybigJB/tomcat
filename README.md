@@ -1,21 +1,24 @@
 ```python
 import base64
 
-# 原始数据
-data = "Hello, Pig!"
+def multi_base64_encode(data: str, n: int) -> str:
+    """对字符串进行 n 次 base64 编码，返回字符串"""
+    encoded = data.encode("utf-8")
+    for _ in range(n):
+        encoded = base64.b64encode(encoded)
+    return encoded.decode("utf-8")
 
-# 第一次 base64 编码
-encoded1 = base64.b64encode(data.encode())
-print("第一次编码:", encoded1)
+def multi_base64_decode(data: str, n: int) -> str:
+    """对字符串进行 n 次 base64 解码，返回字符串"""
+    decoded = data.encode("utf-8")
+    for _ in range(n):
+        decoded = base64.b64decode(decoded)
+    return decoded.decode("utf-8")
 
-# 第二次 base64 编码（对第一次的结果再编码）
-encoded2 = base64.b64encode(encoded1)
-print("第二次编码:", encoded2)
+# 示例
+text = "Hello, Pig!"
+encoded_twice = multi_base64_encode(text, 2)
+print("两次编码:", encoded_twice)
 
-# 第一次解码
-decoded1 = base64.b64decode(encoded2)
-print("第一次解码:", decoded1)
-
-# 第二次解码（得到原始数据）
-decoded2 = base64.b64decode(decoded1).decode()
-print("第二次解码:", decoded2)
+decoded_twice = multi_base64_decode(encoded_twice, 2)
+print("两次解码:", decoded_twice)
