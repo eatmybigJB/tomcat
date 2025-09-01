@@ -10,3 +10,10 @@ diff = (
 # 保存结果
 diff.to_csv(output_file, index=False, encoding="utf-8")
 print(f"已保存结果到: {output_file}")
+
+# 去重（完全相同的行只保留一条）
+diff = diff.drop_duplicates()
+
+# 保存结果
+diff.to_csv(output_file, index=False, encoding="utf-8")
+print(f"已保存结果到: {output_file}")
