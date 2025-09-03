@@ -1,7 +1,11 @@
 ```python
-fields @timestamp, @logStream, @message
+fields @timestamp, @message
 | filter @message like '"currentMatchingId": "'
 | parse @message '"currentMatchingId": "*"' as currentMatchingId
-| display @timestamp, @logStream, currentMatchingId, @message
-| sort @timestamp desc
+| stats
+    count() as occurrences,
+    min(@timestamp) as firstSeen,
+    max(@timestamp) as lastSeen
+  by currentMatchingId
+| sort occurrences desc, lastSeen desc
 | limit 10000
