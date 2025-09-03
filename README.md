@@ -1,6 +1,6 @@
 ```python
-fields @timestamp, @message, @logStream, @log
-| parse @message '"currentMatchingId": *"*" ' as currentMatchingId
-| filter ispresent(currentMatchingId)
+fields @timestamp, @message, @logStream
+| parse @message '"currentMatchingId": *' as currentMatchingId
+| filter currentMatchingId != "null"
 | sort @timestamp desc
 | limit 10000
