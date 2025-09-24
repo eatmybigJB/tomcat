@@ -1,3 +1,4 @@
 ```python
-terraform plan --var-file=var/singbox.tfvars -out=tfplan.out
-terraform show -no-color tfplan.out > plan_output.txt
+output "s3_label_name" {
+  value = module.s3_tf_state.default_label[0].name
+}
