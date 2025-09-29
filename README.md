@@ -1,9 +1,18 @@
 ```python
-# default_label 是 s3_tf_state 里的子模块
-output "label_name" {
-  value = module.default_label.name
-}
-
-output "s3_label_name" {
-  value = module.s3_tf_state.label_name
-}
+def close(self):
+    """
+    关闭连接（按 文件->树->会话->连接 的顺序；强制关闭）
+    """
+    for obj, method in (
+        (getattr(self, "tree", None), "disconnect"),
+        (getattr(self, "session", None), "disconnect"),
+        (getattr(self, "conn", None), "disconnect"),
+    ):
+        if obj is not None:
+            try:
+                if method == "disconnect" and hasattr(obj, "disconnect"):
+                    obj.disconnect(True)  # 强制断开
+                else:
+                    getattr(obj, method)()
+            except Exception:
+                pass
