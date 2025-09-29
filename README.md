@@ -52,8 +52,10 @@ write_files:
 # 5) 首次启动时的命令：重载/重启 sshd 以应用配置
 runcmd:
   - [ systemctl, daemon-reload ]
-  - [ systemctl, reload, ssh ]      # 若 reload 不生效，可改成 restart
-  # - [ systemctl, restart, ssh ]
+  # 由于使用 socket 激活，重启 socket 即可让监听端口切到 33
+  - [ systemctl, restart, ssh.socket ]
+  # （可选）如果你也改了 sshd_config，重启 ssh 服务并不会坏事
+  - [ systemctl, restart, ssh ]
 
 # 6) 可选：更新包（首启会更久）
 #package_update: true
