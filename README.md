@@ -27,16 +27,27 @@ ssh_pwauth: true
 
 # 4) 通过 drop-in 文件显式开启 PasswordAuthentication，并禁用 root 登录
 write_files:
-  - path: /etc/ssh/sshd_config.d/99-cloudinit-password.conf
+  - path: /etc/ssh/sshd_config.d/99-cloudinit-password-and-port.conf
     owner: root:root
     permissions: '0644'
     content: |
-      # Managed by cloud-init: enable password auth, disable root login
+      # Managed by cloud-init
       PasswordAuthentication yes
       KbdInteractiveAuthentication no
       ChallengeResponseAuthentication no
       UsePAM yes
       PermitRootLogin no
+      Port 33
+
+  # —— 覆盖 systemd socket：把 ssh.socket 的监听从 22 改为 33（方法 A 的关键） ——
+  - path: /etc/systemd/system/ssh.socket.d/port-override.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Socket]
+      # 先清空默认的 22，再设置为 33
+      ListenStream=
+      ListenStream=33
 
 # 5) 首次启动时的命令：重载/重启 sshd 以应用配置
 runcmd:
