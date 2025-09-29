@@ -1,10 +1,4 @@
 ```python
-# OpenSSH 私钥格式（默认）
-ssh-keygen -t rsa -b 4096 -C "nginx" -f ./nginx
-
-# 如果你明确需要 PEM（BEGIN RSA PRIVATE KEY 那种）
-ssh-keygen -t rsa -b 4096 -m PEM -C "nginx" -f ./nginx
-
 # 覆盖 ssh.socket（方法A）
 sudo mkdir -p /etc/systemd/system/ssh.socket.d
 sudo tee /etc/systemd/system/ssh.socket.d/port-override.conf >/dev/null <<'EOF'
