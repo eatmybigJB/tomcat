@@ -1,16 +1,16 @@
 ```python
 {
-  "Version":"2012-10-17",
-  "Statement":[
+  "Version": "2012-10-17",
+  "Statement": [
     {
-      "Sid":"AllowInvokeFromVPCE",
-      "Effect":"Allow",
-      "Principal":"*",
-      "Action":"execute-api:Invoke",
-      "Resource":"arn:aws:execute-api:ap-east-1:<your-account-id>:ljhrt4uewe/*",
-      "Condition":{
-        "StringEquals":{
-          "aws:SourceVpce":"vpce-0abc123def4567890"
+      "Sid": "AllowInvokeFromThisVPCE",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-east-1:381492094486:ljhrt4uewe/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceVpce": "vpce-0d563070568d4ffd42"
         }
       }
     }
