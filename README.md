@@ -1,41 +1,22 @@
 ```python
-import pandas as pd
-import os
+| 日期 (GMT+8)   | 时间    | 城市                |
+| ------------ | ----- | ----------------- |
+| Sep 19, 2025 | 22:00 | Sengkang New Town |
+| Sep 19, 2025 | 15:13 | Singapore         |
+| Sep 19, 2025 | 15:11 | Singapore         |
+| Sep 5, 2025  | 08:56 | Singapore         |
+| Sep 5, 2025  | 08:53 | Singapore         |
+| Sep 5, 2025  | 08:05 | Singapore         |
+| Aug 20, 2025 | 18:43 | Singapore         |
+| Aug 16, 2025 | 10:04 | Singapore         |
+| Aug 15, 2025 | 09:52 | Yishun New Town   |
+| Aug 12, 2025 | 22:27 | Singapore         |
+| Aug 8, 2025  | 16:20 | Singapore         |
+| Aug 6, 2025  | 22:03 | Yishun New Town   |
+| Aug 6, 2025  | 22:01 | Yishun New Town   |
+| Aug 6, 2025  | 21:49 | Yishun New Town   |
 
-script_dir = os.path.dirname(os.path.realpath(__file__))
-
-# === 文件路径 ===
-file1 = os.path.join(script_dir, 'corepass_active_email.csv')
-file2 = os.path.join(script_dir, 'users-b2c-daily-full.csv')
-output = os.path.join(script_dir, 'corepass_active_email-login.csv')
-
-# === 读取文件 ===
-df1 = pd.read_csv(file1, dtype=str)
-df2 = pd.read_csv(file2, dtype=str)
-
-# === 清洗空值 ===
-df1["Client Email"] = df1["Client Email"].fillna("").str.strip()
-df2["email"] = df2["email"].fillna("").str.strip().str.lower()
-df2["UserStatus"] = df2["UserStatus"].fillna("").str.strip().str.upper()
-
-# === 生成邮箱到状态的映射 ===
-status_map = dict(zip(df2["email"], df2["UserStatus"]))
-
-# === 根据 Client Email 判断 login ===
-def get_login(email):
-    if not email or email.upper() == "NULL":
-        return ""
-    email_lower = email.lower()
-    if email_lower not in status_map:
-        return "not existed"
-    status = status_map[email_lower]
-    if status in {"CONFIRMED", "RESET_REQUIRED"}:
-        return "yes"
-    return "no"
-
-df1["login"] = df1["Client Email"].apply(get_login)
-
-# === 输出结果 ===
-df1.to_csv(output, index=False, encoding="utf-8-sig")
-print("✅ Done. Saved to", output)
-
+| 月份             | 登录成功次数 |
+| -------------- | ------ |
+| August 2025    | 8 次    |
+| September 2025 | 6 次    |
