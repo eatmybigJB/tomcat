@@ -1,11 +1,13 @@
 ```python
 import copy
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import boto3
 
-# 这个是你已有的 context manager
-# from xxx import b2b_exception_handler
+# 引入你的上下文管理器
+from b2b_exception_handler import b2b_exception_handler
+from common_function.s3_action import s3_record  # 你已有的函数
 
-# ====== 单个用户的处理函数 ======
+# ===================== 单个用户逻辑 =====================
 def _process_single_user_reset_password(
     user_info,
     cognito_client,
@@ -13,33 +15,28 @@ def _process_single_user_reset_password(
     permanent,
     s3_client,
     base_log_template,
-    action,
 ):
     """
-    处理一个用户：
-    1. 生成密码
-    2. set_user_password
-    3. _reset_after_password
-    4. 整个过程放在 b2b_exception_handler 里，写一条 S3 log
+    每个用户：
+      - 生成密码
+      - set_user_password
+      - reset_after_password
+      - 自动记录成功/失败日志到 S3
     """
-
     username = user_info.get("Username", "")
     if not username:
-        # 没有用户名，直接跳过
         return None
 
-    # 生成密码
     password = generate_password_b2b_strong(length=16)
 
-    # 每个用户都复制一份独立的 log dict，避免多线程互相覆盖
+    # 每个线程独立的日志字典
     log = copy.deepcopy(base_log_template)
-    log["action"] = action
     log["username"] = username
-    # 如果你不想在 S3 里看到明文密码，可以不要这一行
-    log["generated_password"] = password  
+    log["action"] = "reset_user_password"
+    log["generated_password"] = password
 
-    with b2b_exception_handler(s3_client, action, log):
-        # 这里出现异常也会被 context manager 捕获并写入 S3
+    with b2b_exception_handler(s3_client, "reset_user_password", log):
+        # 执行 Cognito 操作
         pwd_ok = set_user_password(
             cognito_client,
             user_pool_id,
@@ -52,15 +49,13 @@ def _process_single_user_reset_password(
             cognito_client,
             user_pool_id,
             username,
-            pwd_ok,   # 如果你原来传的是 future，就直接传 True/False 或者删掉这个参数
+            pwd_ok,
         )
 
-        # 在 log 里记录结果，让 context manager 在 __exit__ 里一起写出去
         log["pwd_ok"] = pwd_ok
         log["reset_ok"] = reset_ok
-        log["status"] = "success" if (pwd_ok and reset_ok) else "failed"
+        log["result"] = "success" if (pwd_ok and reset_ok) else "failed"
 
-        # 返回给主线程，用来统计、写本地文件
         return {
             "username": username,
             "password": password,
@@ -68,8 +63,8 @@ def _process_single_user_reset_password(
             "reset_ok": reset_ok,
         }
 
-failed_password_updates_path = "/tmp/failed_password_updates.txt"  # 你原来的路径
 
+# ===================== 批量重置函数 =====================
 def reset_password_b2b(
     user_infos,
     cognito_client,
@@ -78,22 +73,16 @@ def reset_password_b2b(
     s3_client,
     base_log_template,
 ):
-    # 清空日志文件
+    failed_password_updates_path = "/tmp/failed_password_updates.txt"
+
     with open(failed_password_updates_path, "w") as file:
         file.write("")
 
     successful_updates = 0
-    action = "bulk_reset_password"
 
     with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = []
-
-        for user_info in user_infos:
-            username = user_info.get("Username", "")
-            if not username:
-                continue
-
-            future = executor.submit(
+        futures = [
+            executor.submit(
                 _process_single_user_reset_password,
                 user_info,
                 cognito_client,
@@ -101,11 +90,11 @@ def reset_password_b2b(
                 permanent,
                 s3_client,
                 base_log_template,
-                action,
             )
-            futures.append(future)
+            for user_info in user_infos
+            if user_info.get("Username")
+        ]
 
-        # 收集结果
         for future in as_completed(futures):
             try:
                 result = future.result()
@@ -119,19 +108,17 @@ def reset_password_b2b(
 
                 if pwd_ok and reset_ok:
                     successful_updates += 1
-                    # 把成功的账号和密码写到本地文件（你原来的逻辑）
                     with open(failed_password_updates_path, "a") as file:
                         file.write(f"email={username}, password={password}\n")
 
             except Exception as e:
-                # 如果 _process_single_user_reset_password 里面没捕获，
-                # 这里还是兜个底，方便你在 CloudWatch 看
-                print(f"Error in future: {e!r}")
+                print(f"[ThreadError] {e}")
 
-    # 统计总数
     with open(failed_password_updates_path, "a") as file:
         file.write(f"\nTotal successful updates: {successful_updates}\n")
 
+
+# ===================== Lambda 入口函数 =====================
 def lambda_handler(event, context):
     permanent = True
 
@@ -147,11 +134,14 @@ def lambda_handler(event, context):
         attributes_for_reset_password,
     )
 
-    # 这里构造一个基础 log 模板，公用的字段放这里
+    # 创建 S3 客户端
+    s3_client = boto3.client("s3")
+
+    # 基础日志模板
     base_log_template = {
         "source": "bulk_reset_password_lambda",
         "request_id": context.aws_request_id if context else None,
-        # 你原来想带的其他字段可以加在这里
+        "trigger_event": event,
     }
 
     reset_password_b2b(
