@@ -7,22 +7,14 @@ import re
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # ======= 改成你自己的文件路径 =======
-# 图一：包含 UserStatus,preferred_username,sub,Username,email,phone_number,phone_number_verified,custom:svoc_id,...
 OLD_CSV = os.path.join(script_dir, "users-b2c-daily.csv")
-
-# 图二：包含 _id,matchingId,emailAddressNumber,countryCode,mobilePhoneNumber
 NEW_CSV = os.path.join(script_dir, "CEP_SG_SvocGoldenRecords.csv")
-
-# 图三：包含 current svocId,before svocId
 SVOC_MAP_CSV = os.path.join(script_dir, "svocid_mapping.csv")
-
-# 输出
 OUTPUT_CSV = os.path.join(script_dir, "users-b2c-daily-replace.csv")
 # ==================================
 
 
 def clean_str(s: str) -> str:
-    """去除不可见字符并 strip。"""
     if s is None:
         return ""
     s = str(s)
@@ -31,7 +23,6 @@ def clean_str(s: str) -> str:
     return s.strip()
 
 
-# ================= 邮箱相关 =================
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -46,14 +37,11 @@ def is_valid_email(email: str) -> bool:
     return bool(EMAIL_RE.match(email))
 
 
-# ================= 电话相关 =================
-# 现在仍然要求：+65 + 8 位数字（之后如果你要放宽再改这里）
-PHONE_RE = re.compile(r"^\+65\d{8}$")
+PHONE_RE = re.compile(r"^\+65\d{8}$")  # 仍然要求 8 位，如需放宽之后可改
 
 
 def normalize_phone(phone: str) -> str:
     phone = clean_str(phone)
-    # 去掉空格和中划线，但保留 +
     phone = phone.replace(" ", "").replace("-", "")
     return phone
 
@@ -64,12 +52,10 @@ def is_valid_phone(phone: str) -> bool:
 
 
 def main():
-    # ========= 读取三个 CSV =========
     old_df = pd.read_csv(OLD_CSV, dtype=str, keep_default_na=False)
     new_df = pd.read_csv(NEW_CSV, dtype=str, keep_default_na=False)
     svoc_df = pd.read_csv(SVOC_MAP_CSV, dtype=str, keep_default_na=False)
 
-    # ========= 清理 OLD_CSV 关键列 =========
     required_old_cols = [
         "UserStatus",
         "preferred_username",
@@ -79,58 +65,41 @@ def main():
         "custom:svoc_id",
     ]
     for col in required_old_cols:
-        if col in old_df.columns:
-            old_df[col] = old_df[col].map(clean_str)
-        else:
+        if col not in old_df.columns:
             raise KeyError(f"旧文件缺少列: {col}")
+        old_df[col] = old_df[col].map(clean_str)
 
-    # ========= 清理 NEW_CSV 关键列 =========
     for col in ["matchingId", "emailAddressNumber", "countryCode", "mobilePhoneNumber"]:
-        if col in new_df.columns:
-            new_df[col] = new_df[col].map(clean_str)
-        else:
+        if col not in new_df.columns:
             raise KeyError(f"新文件缺少列: {col}")
+        new_df[col] = new_df[col].map(clean_str)
 
-    # ========= 清理 SVOC_MAP_CSV 关键列 =========
     CURRENT_SVOC_COL = "current svocId"
     BEFORE_SVOC_COL = "before svocId"
 
     for col in [CURRENT_SVOC_COL, BEFORE_SVOC_COL]:
-        if col in svoc_df.columns:
-            svoc_df[col] = svoc_df[col].map(clean_str)
-        else:
+        if col not in svoc_df.columns:
             raise KeyError(f"svoc 映射文件缺少列: {col}")
+        svoc_df[col] = svoc_df[col].map(clean_str)
 
-    # before svocId -> current svocId 映射
-    svoc_map = dict(
-        zip(
-            svoc_df[BEFORE_SVOC_COL],
-            svoc_df[CURRENT_SVOC_COL],
-        )
-    )
+    svoc_map = dict(zip(svoc_df[BEFORE_SVOC_COL], svoc_df[CURRENT_SVOC_COL]))
 
-    # NEW_CSV 去重：同一个 matchingId 只保留最后一条
     new_df = new_df.drop_duplicates(subset=["matchingId"], keep="last")
 
-    # ========= 只保留有用的 svocid 行 =========
-    # OLD 里的 svocid 必须在 NEW.matchingId 或 SVOC_MAP.before 里出现，才有意义
     valid_svoc_from_new = set(new_df["matchingId"].dropna().map(clean_str))
-    valid_svoc_from_map = set(svoc_map.keys())  # before svocId
+    valid_svoc_from_map = set(svoc_map.keys())
     valid_all_svoc = valid_svoc_from_new.union(valid_svoc_from_map)
 
     base_df = old_df[
         old_df["custom:svoc_id"].map(lambda x: clean_str(x) in valid_all_svoc)
     ].copy()
 
-    # ========= 计算 lookup_svocid：用来去 NEW_CSV 查数据 =========
-    # 如果 OLD 中的是 before，就映射到 current；否则就直接用自己
-    def resolve_lookup_svocid(old_svoc: str) -> str:
-        key = clean_str(old_svoc)
-        return svoc_map.get(key, key)
+    def resolve_lookup_svocid(old_svoc):
+        x = clean_str(old_svoc)
+        return svoc_map.get(x, x)
 
     base_df["lookup_svocid"] = base_df["custom:svoc_id"].map(resolve_lookup_svocid)
 
-    # ========= 用 lookup_svocid 和 NEW_CSV 关联，拿最新 email / phone =========
     merged = base_df.merge(
         new_df,
         how="left",
@@ -139,7 +108,6 @@ def main():
         suffixes=("", "_new"),
     )
 
-    # ========= 主循环：邮箱、电话、svocid 替换 + tag =========
     tags = []
 
     for idx, row in merged.iterrows():
@@ -147,62 +115,42 @@ def main():
         phone_updated = False
         svoc_updated = False
 
-        # ---------- 邮箱逻辑 ----------
-        old_email_col = row.get("email", "")
-        old_username = row.get("Username", "")
-        old_preferred = row.get("preferred_username", "")
-
-        # 对比基准：优先 email，其次 Username / preferred_username
-        old_email_for_compare = normalize_email(
-            old_email_col or old_username or old_preferred
-        )
-
+        # ========= EMAIL（改这里：只更新 email，不动 preferred_username 和 Username） =========
+        old_email = row.get("email", "")
         new_email_raw = row.get("emailAddressNumber", "")
         new_email_norm = normalize_email(new_email_raw)
 
-        if is_valid_email(new_email_raw) and new_email_norm:
-            if old_email_for_compare != new_email_norm:
-                # 覆盖 email / Username / preferred_username
+        if is_valid_email(new_email_raw):
+            if normalize_email(old_email) != new_email_norm:
                 merged.at[idx, "email"] = new_email_norm
-                merged.at[idx, "Username"] = new_email_norm
-                merged.at[idx, "preferred_username"] = new_email_norm
                 email_updated = True
 
-        # ---------- 电话逻辑 ----------
-        old_phone_raw = row.get("phone_number", "")
-        old_phone_norm = normalize_phone(old_phone_raw)
-
-        cc = row.get("countryCode", "")
-        mp = row.get("mobilePhoneNumber", "")
-        cc = clean_str(cc)
-        mp = clean_str(mp)
-
-        new_phone_full = ""
-        if cc and mp:
-            new_phone_full = f"+{cc}{mp}"
+        # ========= PHONE =========
+        old_phone_norm = normalize_phone(row.get("phone_number", ""))
+        cc = clean_str(row.get("countryCode", ""))
+        mp = clean_str(row.get("mobilePhoneNumber", ""))
+        new_phone_full = f"+{cc}{mp}" if cc and mp else ""
 
         if new_phone_full and is_valid_phone(new_phone_full):
-            new_phone_norm = normalize_phone(new_phone_full)
-            if old_phone_norm != new_phone_norm:
+            if old_phone_norm != normalize_phone(new_phone_full):
                 merged.at[idx, "phone_number"] = new_phone_full
                 phone_updated = True
 
-        # ---------- svocId 映射逻辑 ----------
-        old_svoc = row.get("custom:svoc_id", "")
-        old_svoc_clean = clean_str(old_svoc)
+        # ========= SVOCID =========
+        old_svoc = clean_str(row.get("custom:svoc_id", ""))
         lookup_svoc = clean_str(row.get("lookup_svocid", ""))
 
-        if lookup_svoc and lookup_svoc != old_svoc_clean:
+        if lookup_svoc and lookup_svoc != old_svoc:
             merged.at[idx, "custom:svoc_id"] = lookup_svoc
             svoc_updated = True
 
-        # ---------- tag 逻辑（7 种情况 + original） ----------
+        # ========= TAG 逻辑 =========
         if not (email_updated or phone_updated or svoc_updated):
             tag = "original"
-        elif phone_updated and not email_updated and not svoc_updated:
-            tag = "overwrite_phone"
         elif email_updated and not phone_updated and not svoc_updated:
             tag = "overwrite_email"
+        elif phone_updated and not email_updated and not svoc_updated:
+            tag = "overwrite_phone"
         elif svoc_updated and not phone_updated and not email_updated:
             tag = "overwrite_svocid"
         elif phone_updated and email_updated and not svoc_updated:
@@ -211,14 +159,14 @@ def main():
             tag = "overwrite_phone_svocid"
         elif svoc_updated and email_updated and not phone_updated:
             tag = "overwrite_svocid_email"
-        else:  # 三个都改了
+        else:
             tag = "overwrite_all"
 
         tags.append(tag)
 
     merged["tag"] = tags
 
-    # ========= 输出 CSV =========
+    # ========= 输出 =========
     out_cols = [
         "UserStatus",
         "preferred_username",
@@ -228,10 +176,9 @@ def main():
         "custom:svoc_id",
         "tag",
     ]
-    output_df = merged[out_cols]
-    output_df.to_csv(OUTPUT_CSV, index=False)
+    merged[out_cols].to_csv(OUTPUT_CSV, index=False)
 
-    print(f"处理完成，已输出到: {OUTPUT_CSV}")
+    print(f"处理完成，输出到: {OUTPUT_CSV}")
 
 
 if __name__ == "__main__":
