@@ -47,7 +47,7 @@ def is_valid_email(email: str) -> bool:
 
 
 # ================= 电话相关 =================
-# 要求：+65 开头，后面 8 位数字
+# 现在仍然要求：+65 + 8 位数字（之后如果你要放宽再改这里）
 PHONE_RE = re.compile(r"^\+65\d{8}$")
 
 
@@ -101,7 +101,7 @@ def main():
         else:
             raise KeyError(f"svoc 映射文件缺少列: {col}")
 
-    # 生成 before svocId -> current svocId 映射字典
+    # before svocId -> current svocId 映射
     svoc_map = dict(
         zip(
             svoc_df[BEFORE_SVOC_COL],
@@ -112,21 +112,32 @@ def main():
     # NEW_CSV 去重：同一个 matchingId 只保留最后一条
     new_df = new_df.drop_duplicates(subset=["matchingId"], keep="last")
 
-    # ========= 旧文件和新文件按 svoc_id / matchingId 关联 =========
-    merged = old_df.merge(
+    # ========= 只保留有用的 svocid 行 =========
+    # OLD 里的 svocid 必须在 NEW.matchingId 或 SVOC_MAP.before 里出现，才有意义
+    valid_svoc_from_new = set(new_df["matchingId"].dropna().map(clean_str))
+    valid_svoc_from_map = set(svoc_map.keys())  # before svocId
+    valid_all_svoc = valid_svoc_from_new.union(valid_svoc_from_map)
+
+    base_df = old_df[
+        old_df["custom:svoc_id"].map(lambda x: clean_str(x) in valid_all_svoc)
+    ].copy()
+
+    # ========= 计算 lookup_svocid：用来去 NEW_CSV 查数据 =========
+    # 如果 OLD 中的是 before，就映射到 current；否则就直接用自己
+    def resolve_lookup_svocid(old_svoc: str) -> str:
+        key = clean_str(old_svoc)
+        return svoc_map.get(key, key)
+
+    base_df["lookup_svocid"] = base_df["custom:svoc_id"].map(resolve_lookup_svocid)
+
+    # ========= 用 lookup_svocid 和 NEW_CSV 关联，拿最新 email / phone =========
+    merged = base_df.merge(
         new_df,
         how="left",
-        left_on="custom:svoc_id",
+        left_on="lookup_svocid",
         right_on="matchingId",
         suffixes=("", "_new"),
     )
-
-    # ========= 过滤：只保留 svocid 在 NEW_CSV 或 SVOC_MAP_CSV 中出现的行 =========
-    valid_svoc_from_new = set(new_df["matchingId"].dropna().map(clean_str))
-    valid_svoc_from_map = set(svoc_df[BEFORE_SVOC_COL].dropna().map(clean_str))
-    valid_all_svoc = valid_svoc_from_new.union(valid_svoc_from_map)
-
-    merged = merged[merged["custom:svoc_id"].map(clean_str).isin(valid_all_svoc)].reset_index(drop=True)
 
     # ========= 主循环：邮箱、电话、svocid 替换 + tag =========
     tags = []
@@ -141,7 +152,7 @@ def main():
         old_username = row.get("Username", "")
         old_preferred = row.get("preferred_username", "")
 
-        # 旧邮箱对比优先用 email 列，其次 Username / preferred_username
+        # 对比基准：优先 email，其次 Username / preferred_username
         old_email_for_compare = normalize_email(
             old_email_col or old_username or old_preferred
         )
@@ -179,14 +190,13 @@ def main():
         # ---------- svocId 映射逻辑 ----------
         old_svoc = row.get("custom:svoc_id", "")
         old_svoc_clean = clean_str(old_svoc)
+        lookup_svoc = clean_str(row.get("lookup_svocid", ""))
 
-        if old_svoc_clean in svoc_map:
-            current_svoc = clean_str(svoc_map[old_svoc_clean])
-            if current_svoc and current_svoc != old_svoc_clean:
-                merged.at[idx, "custom:svoc_id"] = current_svoc
-                svoc_updated = True
+        if lookup_svoc and lookup_svoc != old_svoc_clean:
+            merged.at[idx, "custom:svoc_id"] = lookup_svoc
+            svoc_updated = True
 
-        # ---------- tag 逻辑（细分 7 种情况） ----------
+        # ---------- tag 逻辑（7 种情况 + original） ----------
         if not (email_updated or phone_updated or svoc_updated):
             tag = "original"
         elif phone_updated and not email_updated and not svoc_updated:
