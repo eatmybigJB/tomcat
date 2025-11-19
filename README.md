@@ -7,9 +7,15 @@ import re
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
 # ======= 改成你自己的文件路径 =======
-OLD_CSV = os.path.join(script_dir, "users-b2c-daily.csv")          # 图一：包含 UserStatus,preferred_username,Username,custom:svoc_id,phone_number
-NEW_CSV = os.path.join(script_dir, "CEP_SG_SvocGoldenRecords.csv")  # 图二：包含 _id,matchingId,emailAddressNumber,countryCode,mobilePhoneNumber
-SVOC_MAP_CSV = os.path.join(script_dir, "svocid_mapping.csv")       # 图三：包含 current svocId,before svocId
+# 图一：包含 UserStatus,preferred_username,Username,custom:svoc_id,phone_number
+OLD_CSV = os.path.join(script_dir, "users-b2c-daily.csv")
+
+# 图二：包含 _id,matchingId,emailAddressNumber,countryCode,mobilePhoneNumber
+NEW_CSV = os.path.join(script_dir, "CEP_SG_SvocGoldenRecords.csv")
+
+# 图三：包含 current svocId,before svocId
+SVOC_MAP_CSV = os.path.join(script_dir, "svocid_mapping.csv")
+
 OUTPUT_CSV = os.path.join(script_dir, "users-b2c-daily-replace.csv")
 # ==================================
 
@@ -24,11 +30,13 @@ def clean_str(s: str) -> str:
     return s.strip()
 
 
-# 邮箱处理
+# ================= 邮箱相关 =================
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 
 def normalize_email(email: str) -> str:
     return clean_str(email).lower()
+
 
 def is_valid_email(email: str) -> bool:
     email = clean_str(email)
@@ -37,13 +45,17 @@ def is_valid_email(email: str) -> bool:
     return bool(EMAIL_RE.match(email))
 
 
-# 电话处理：要求 +65 + 8 位数字
+# ================= 电话相关 =================
+# 要求：+65 开头，后面 8 位数字
 PHONE_RE = re.compile(r"^\+65\d{8}$")
+
 
 def normalize_phone(phone: str) -> str:
     phone = clean_str(phone)
+    # 去掉空格和中划线，但保留 +
     phone = phone.replace(" ", "").replace("-", "")
     return phone
+
 
 def is_valid_phone(phone: str) -> bool:
     phone = normalize_phone(phone)
@@ -51,27 +63,26 @@ def is_valid_phone(phone: str) -> bool:
 
 
 def main():
-    # ========== 读三个 CSV ==========
+    # ========= 读取三个 CSV =========
     old_df = pd.read_csv(OLD_CSV, dtype=str, keep_default_na=False)
     new_df = pd.read_csv(NEW_CSV, dtype=str, keep_default_na=False)
     svoc_df = pd.read_csv(SVOC_MAP_CSV, dtype=str, keep_default_na=False)
 
-    # 清理 OLD_CSV 关键列
+    # ========= 清理 OLD_CSV 关键列 =========
     for col in ["UserStatus", "preferred_username", "Username", "custom:svoc_id", "phone_number"]:
         if col in old_df.columns:
             old_df[col] = old_df[col].map(clean_str)
         else:
             raise KeyError(f"旧文件缺少列: {col}")
 
-    # 清理 NEW_CSV 关键列
+    # ========= 清理 NEW_CSV 关键列 =========
     for col in ["matchingId", "emailAddressNumber", "countryCode", "mobilePhoneNumber"]:
         if col in new_df.columns:
             new_df[col] = new_df[col].map(clean_str)
         else:
             raise KeyError(f"新文件缺少列: {col}")
 
-    # 清理 SVOC_MAP_CSV 关键列
-    # 注意列名根据你文件头来的，如果有空格就用下面这两个
+    # ========= 清理 SVOC_MAP_CSV 关键列 =========
     CURRENT_SVOC_COL = "current svocId"
     BEFORE_SVOC_COL = "before svocId"
 
@@ -81,7 +92,7 @@ def main():
         else:
             raise KeyError(f"svoc 映射文件缺少列: {col}")
 
-    # 生成 before_svocId -> current_svocId 映射字典
+    # 生成 before svocId -> current svocId 映射字典
     svoc_map = dict(
         zip(
             svoc_df[BEFORE_SVOC_COL],
@@ -92,7 +103,7 @@ def main():
     # NEW_CSV 去重：同一个 matchingId 只保留最后一条
     new_df = new_df.drop_duplicates(subset=["matchingId"], keep="last")
 
-    # 旧文件和新文件按 svoc_id / matchingId 关联
+    # ========= 旧文件和新文件按 svoc_id / matchingId 关联 =========
     merged = old_df.merge(
         new_df,
         how="left",
@@ -101,6 +112,14 @@ def main():
         suffixes=("", "_new"),
     )
 
+    # ========= 过滤：只保留 svocid 在 NEW_CSV 或 SVOC_MAP_CSV 中出现的行 =========
+    valid_svoc_from_new = set(new_df["matchingId"].dropna().map(clean_str))
+    valid_svoc_from_map = set(svoc_df[BEFORE_SVOC_COL].dropna().map(clean_str))
+    valid_all_svoc = valid_svoc_from_new.union(valid_svoc_from_map)
+
+    merged = merged[merged["custom:svoc_id"].map(clean_str).isin(valid_all_svoc)].reset_index(drop=True)
+
+    # ========= 主循环：邮箱、电话、svocid 替换 + tag =========
     tags = []
 
     for idx, row in merged.iterrows():
@@ -108,7 +127,7 @@ def main():
         phone_updated = False
         svoc_updated = False
 
-        # ===== 邮箱逻辑（保持原来） =====
+        # ---------- 邮箱逻辑 ----------
         old_username = row.get("Username", "")
         old_preferred = row.get("preferred_username", "")
         old_email_for_compare = normalize_email(old_username or old_preferred)
@@ -122,7 +141,7 @@ def main():
                 merged.at[idx, "preferred_username"] = new_email_norm
                 email_updated = True
 
-        # ===== 电话逻辑（保持原来） =====
+        # ---------- 电话逻辑 ----------
         old_phone_raw = row.get("phone_number", "")
         old_phone_norm = normalize_phone(old_phone_raw)
 
@@ -141,7 +160,7 @@ def main():
                 merged.at[idx, "phone_number"] = new_phone_full
                 phone_updated = True
 
-        # ===== svocId 映射逻辑（新增） =====
+        # ---------- svocId 映射逻辑 ----------
         old_svoc = row.get("custom:svoc_id", "")
         old_svoc_clean = clean_str(old_svoc)
 
@@ -151,11 +170,10 @@ def main():
                 merged.at[idx, "custom:svoc_id"] = current_svoc
                 svoc_updated = True
 
-        # ===== tag 逻辑：在原基础上增加 svocId =====
+        # ---------- tag 逻辑 ----------
         updated_count = sum([email_updated, phone_updated, svoc_updated])
 
         if updated_count >= 2:
-            # 任意两个以上字段更新（邮箱/电话/svocId），统一记为 overwrite_all
             tag = "overwrite_all"
         else:
             if svoc_updated:
@@ -171,7 +189,7 @@ def main():
 
     merged["tag"] = tags
 
-    # 按要求的列顺序输出
+    # ========= 输出 CSV =========
     out_cols = [
         "UserStatus",
         "preferred_username",
