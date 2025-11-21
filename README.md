@@ -6,21 +6,24 @@ import re
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
-# ======= 改成你自己的文件路径 =======
-OLD_CSV = os.path.join(script_dir, "users-b2c-daily.csv")
-NEW_CSV = os.path.join(script_dir, "CEP_SG_SvocGoldenRecords.csv")
-SVOC_MAP_CSV = os.path.join(script_dir, "svocid_mapping.csv")
+# ======= 改成你自己的文件路径（按你刚才的要求） =======
+OLD_CSV = os.path.join(script_dir, "users-b2c-daily-full3.csv")
+NEW_CSV = os.path.join(script_dir, "CEP_SG.SvocGoldenRecords.csv")      # 图二
+SVOC_MAP_CSV = os.path.join(script_dir, "CEP_SG.change_svocId.csv")     # 图三
 OUTPUT_CSV = os.path.join(script_dir, "users-b2c-daily-replace.csv")
-# ==================================
+# ======================================================
 
 
 def clean_str(s: str) -> str:
-    """去除不可见字符并 strip。"""
+    """去除常见不可见字符和 BOM，并 strip。"""
     if s is None:
         return ""
     s = str(s)
-    for ch in ["\u200b", "\u200c", "\u200d", "\ufeff"]:
+    for ch in ["\u200b", "\u200c", "\u200d", "\ufeff", "\u2060",
+               "\u00a0", "\u202c", "\u202d", "\u202e", "\u200e", "\u200f"]:
         s = s.replace(ch, "")
+    # 全角加号转半角
+    s = s.replace("＋", "+")
     return s.strip()
 
 
@@ -167,16 +170,27 @@ def main():
         # ---------- 电话逻辑 ----------
         old_phone_norm = normalize_phone(row.get("phone_number", ""))
 
-        cc = clean_str(row.get("countryCode", ""))
+        # 保留 raw_cc 用于判断是否存在“特殊符号”
+        raw_cc = row.get("countryCode", "")
+        cc = clean_str(raw_cc)
         mp = clean_str(row.get("mobilePhoneNumber", ""))
+
         new_phone_full = build_phone(cc, mp)
 
         # 电话是否无效或缺失（用于 original 细分）
-        if cc == "65":
-            phone_invalid_or_missing = not is_valid_phone_sg(new_phone_full)
-        else:
-            phone_invalid_or_missing = not is_valid_phone_general(cc, mp)
+        raw_cc_stripped = str(raw_cc).strip()
+        has_weird_char_in_cc = bool(raw_cc_stripped) and (not raw_cc_stripped.isdigit())
 
+        if has_weird_char_in_cc:
+            # 只要 countryCode 中出现非数字字符（例如前面有不可见符号），整个电话视为非法
+            phone_invalid_or_missing = True
+        else:
+            if cc == "65":
+                phone_invalid_or_missing = not is_valid_phone_sg(new_phone_full)
+            else:
+                phone_invalid_or_missing = not is_valid_phone_general(cc, mp)
+
+        # 通过合法性检查才允许覆盖
         if not phone_invalid_or_missing:
             if old_phone_norm != normalize_phone(new_phone_full):
                 merged.at[idx, "phone_number"] = new_phone_full
@@ -238,3 +252,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
