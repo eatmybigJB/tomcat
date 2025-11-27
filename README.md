@@ -4,6 +4,9 @@ import requests
 import jwt
 from jwt.algorithms import RSAAlgorithm
 
+pip install pyjwt cryptography requests
+
+
 
 COGNITO_REGION = "ap-east-1"
 USER_POOL_ID = "ap-east-1_LNf5zPST"
