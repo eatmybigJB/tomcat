@@ -1,40 +1,62 @@
 ```python
-import base64
 import json
-
-def base64url_decode(input_str):
-    """Decode base64url without padding."""
-    padding = '=' * (4 - (len(input_str) % 4))
-    return base64.urlsafe_b64decode(input_str + padding)
-
-def split_jwt(token):
-    """Split JWT into header, payload, signature and decode the JSON parts."""
-    parts = token.split('.')
-    if len(parts) != 3:
-        raise ValueError("Invalid JWT: should contain 3 parts")
-
-    header_b64, payload_b64, signature_b64 = parts
-
-    header = json.loads(base64url_decode(header_b64))
-    payload = json.loads(base64url_decode(payload_b64))
-    signature = signature_b64  # signature 不需要 JSON decode
-
-    return header, payload, signature
+import requests
+import jwt
+from jwt.algorithms import RSAAlgorithm
 
 
-# ---------------------------
-#  Example usage:
-# ---------------------------
+COGNITO_REGION = "ap-east-1"
+USER_POOL_ID = "ap-east-1_LNf5zPST"
 
-access_token = input("Enter access token: ").strip()
+JWKS_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{USER_POOL_ID}/.well-known/jwks.json"
 
-header, payload, signature = split_jwt(access_token)
 
-print("===== HEADER =====")
-print(json.dumps(header, indent=4))
+def get_public_key(token):
+    """从 token header 的 kid 找到 JWKS 中对应公钥"""
+    headers = jwt.get_unverified_header(token)
+    kid = headers["kid"]
 
-print("\n===== PAYLOAD =====")
-print(json.dumps(payload, indent=4))
+    jwks = requests.get(JWKS_URL).json()
 
-print("\n===== SIGNATURE (base64url) =====")
-print(signature)
+    for jwk in jwks["keys"]:
+        if jwk["kid"] == kid:
+            return RSAAlgorithm.from_jwk(json.dumps(jwk))
+
+    raise Exception("No matching JWK found")
+
+
+def verify_signature_only(token):
+    """只验证 token 是否被篡改，不校验 iss、aud、exp 等"""
+    public_key = get_public_key(token)
+
+    try:
+        # options={"verify_*": False} 禁止所有其他校验，只验证签名
+        payload = jwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            options={
+                "verify_signature": True,  # ✔ 只验证签名
+                "verify_exp": False,       # ❌ 不验证过期
+                "verify_aud": False,       # ❌ 不验证 audience
+                "verify_iss": False,       # ❌ 不验证 issuer
+            }
+        )
+        return True, payload
+    except jwt.InvalidSignatureError:
+        return False, "Signature INVALID (token may be tampered)"
+    except Exception as e:
+        return False, str(e)
+
+
+# ---- 测试 ----
+if __name__ == "__main__":
+    token = input("Enter access token: ").strip()
+    ok, info = verify_signature_only(token)
+
+    if ok:
+        print("\n✅ Signature is VALID (token NOT tampered)")
+        print(json.dumps(info, indent=4))
+    else:
+        print("\n❌ Signature INVALID")
+        print("Reason:", info)
