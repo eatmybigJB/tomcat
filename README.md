@@ -1,4 +1,13 @@
 ```python
-python.exe -m pip install boto3==1.34.131
-python.exe -m pip install adfs-assume
+aws cognito-idp update-user-pool-client \
+  --user-pool-id xxxxxx \
+  --client-id xxxxxx \
+  --supported-identity-providers 'COGNITO' \
+  --allowed-o-auth-flows 'code' \
+  --allowed-o-auth-scopes 'openid' 'email' \
+  --allowed-o-auth-flows-user-pool-client \
+  --explicit-auth-flows 'ALLOW_USER_SRP_AUTH' \
+  --token-validity-units AccessToken=minutes \
+  --access-token-validity 60 \
+  --enable-token-customization
 
