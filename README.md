@@ -11,3 +11,8 @@ aws cognito-idp update-user-pool-client \
   --access-token-validity 60 \
   --enable-token-customization
 
+aws cognito-idp describe-user-pool-client \
+    --user-pool-id xxxx \
+    --client-id xxxxx
+
+
