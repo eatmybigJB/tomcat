@@ -1,18 +1,13 @@
 ```python
-aws cognito-idp update-user-pool-client \
-  --user-pool-id xxxxxx \
-  --client-id xxxxxx \
-  --supported-identity-providers 'COGNITO' \
-  --allowed-o-auth-flows 'code' \
-  --allowed-o-auth-scopes 'openid' 'email' \
-  --allowed-o-auth-flows-user-pool-client \
-  --explicit-auth-flows 'ALLOW_USER_SRP_AUTH' \
-  --token-validity-units AccessToken=minutes \
-  --access-token-validity 60 \
-  --enable-token-customization
+terraform state list \
+| awk -F. '
+{
+  if ($1=="module") {
+    printf "%-15s %-35s %s\n", $2, $3"."$4, $5
+  } else {
+    printf "%-15s %-35s %s\n", "root", $1"."$2, $3
+  }
+}'
 
-aws cognito-idp describe-user-pool-client \
-    --user-pool-id xxxx \
-    --client-id xxxxx
 
 
